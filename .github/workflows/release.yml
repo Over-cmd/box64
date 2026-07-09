@@ -1,99 +1,62 @@
-name: Compilar Box64 Pipetto Nativo WCP Puro
-
+name: Compilar Box64 WCP para Unisoc T618
 on:
-  push:
-    branches:
-      - main
-      - master
   workflow_dispatch:
 
-permissions:
-  contents: write
-  packages: write
-  actions: write
-
 jobs:
-  build:
+  build-android-bionic:
     runs-on: ubuntu-latest
-
     steps:
-      # 1. Clonar tu fork de Box64 de Pipetto-crypto
-      - name: Checkout del repositorio
+      - name: Descargar Código Fuente
         uses: actions/checkout@v4
 
-      # 2. Instalar Ninja y herramientas globales
-      - name: Instalar Herramientas de Compilación Globales
+      - name: Configurar e Instalar Herramientas
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build python3
+          sudo apt-get install -y cmake python3 ninja-build zip
 
-      # 3. PARCHE GLOBAL DE CÓDIGO: Comentar el pragma FENV en todo el código fuente
-      - name: Aplicar Parche de Compatibilidad FENV Global
-        run: |
-          echo "Buscando y comentando directivas FENV_ACCESS en el repositorio..."
-          find . -type f \( -name "*.c" -o -name "*.h" \) -exec sed -i 's/#pragma STDC FENV_ACCESS ON/\/\/ #pragma STDC FENV_ACCESS ON/g' {} +
-          echo "¡Parche global aplicado con éxito!"
+      - name: Configurar NDK de Android
+        uses: android-actions/setup-android@v3
+        with:
+          ndk-version: '25.2.9519653'
 
-      # 4. CONFIGURACIÓN Y COMPILACIÓN CON EL ANDROID NDK COMPATIBLE DEL SISTEMA
-      - name: Configurar y Compilar Box64 con CMake y Ninja
+      - name: Configurar CMake e Inyectar Toolchain del NDK
+        # Forzamos el uso de Clang del NDK para resolver los conflictos de librerías de señales
         run: |
-          REAL_NDK=$(ls -d /usr/local/lib/android/sdk/ndk/* 2>/dev/null | head -n 1)
-          echo "Usando Android NDK oficial en la ruta: $REAL_NDK"
-          
-          export CC=$REAL_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang
-          export CXX=$REAL_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang++
-          export ASM=$REAL_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang
-          
-          mkdir -p build && cd build
+          mkdir build && cd build
           cmake .. \
-            -G "Ninja" \
-            -DCMAKE_MAKE_PROGRAM=$(which ninja) \
-            -DCMAKE_SYSTEM_NAME=Android \
-            -DCMAKE_SYSTEM_VERSION=29 \
-            -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a \
-            -DCMAKE_ANDROID_NDK=$REAL_NDK \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+            -DCMAKE_C_COMPILER=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
             -DCMAKE_BUILD_TYPE=Release \
-            -DANDROID=ON \
-            -DLINUX=OFF \
-            -DARM_DYNAREC=ON \
-            -DARCH64=ON \
-            -DARM_CPU=cortex-a75 \
-            -DCMAKE_CXX_FLAGS="-O3 -fno-trapping-math -ffinite-math-only" \
-            -DCMAKE_C_FLAGS="-O3 -fno-trapping-math -ffinite-math-only"
-          
-          cmake --build . --parallel $(nproc)
+            -DARM64=1 \
+            -DLD80BITS=1 \
+            -DNO_MUTEX_LOG=1 \
+            -DCMAKE_C_FLAGS="-O3 -march=armv8-a+crc+crypto -mtune=cortex-a75" \
+            -G Ninja
 
-      # 5. PARCHE PYTHON TAR.GZ DE COMPATIBILIDAD MÓVIL: Genera el .wcp omitiendo IDs de propietario que congelan Android
-      - name: Generar Archivo WCP Puro Individual con Python (Formato Tar.Gz)
+      - name: Compilar Binario Box64
         run: |
-          cp build/box64 ./box64
-          chmod 755 ./box64
-          
-          # Script en línea de Python para crear un tar.gz empaquetado como .wcp plano
-          python3 -c '
-          import tarfile
-          import os
-          
-          with tarfile.open("box64.wcp", "w:gz") as tar:
-              # Forzamos que el propietario del archivo sea "root" con UID/GID 0 estándar de Android
-              info = tar.gettarinfo("box64", "box64")
-              info.uid = 0
-              info.gid = 0
-              info.uname = "root"
-              info.gname = "root"
-              tar.addfile(info, open("box64", "rb"))
-          '
-          echo "¡Archivo box64.wcp de compatibilidad Tar.Gz generado de forma limpia!"
+          cd build
+          ninja
 
-      # 6. PUBLICACIÓN DIRECTA EN RELEASES CON EL ARCHIVO .WCP COMPATIBLE CON BIONIC
-      - name: Publicar archivo box64.wcp en Releases de forma Nativa
+      - name: Empaquetar en Formato WCP (Estructura Limpia Raíz)
+        # Estructuramos el binario y el manifiesto directamente en la raíz del archivo comprimido
         run: |
-          TAG_NAME="v1.0.${{ github.run_number }}"
-          echo "Creando Release oficial nativa en el servidor bajo el tag: $TAG_NAME"
+          mkdir -p wcp_content/bin
+          cp build/box64 wcp_content/bin/
           
-          gh release create "$TAG_NAME" \
-            --title "Box64 T618 WCP TarGz (Build #${{ github.run_number }})" \
-            --notes "Archivo box64.wcp empaquetado individualmente en formato Tar.Gz limpio mediante Python para Winlator Bionic." \
-            box64.wcp
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Manifiesto JSON con los metadatos exactos de tu perfil de hardware
+          echo '{"name": "Box64 Unisoc T618 Mali-G52", "version": "Custom-Mali-Vulkan", "architectures": ["arm64"]}' > wcp_content/metadata.json
+          
+          # Entramos a la carpeta para comprimir los elementos sueltos
+          cd wcp_content
+          zip -r ../box64-t618-bionic.wcp .
+
+      - name: Guardar Archivo Compilado (.WCP Directo)
+        uses: actions/upload-artifact@v4
+        with:
+          name: box64-t618-bionic.wcp
+          path: box64-t618-bionic.wcp
+          # Evitamos que GitHub empaquete el archivo dentro de otro ZIP redundante
+          compression-level: 0
