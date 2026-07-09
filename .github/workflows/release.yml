@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-android-wcp:
+  build-android-bionic:
     runs-on: ubuntu-latest
     steps:
       - name: Descargar Código Fuente
@@ -38,33 +38,19 @@ jobs:
           cd build
           ninja
 
-      - name: Empaquetar Estructura WCP Oficial (Con profile.json)
-        # Creamos una carpeta temporal suelta, movemos el binario y generamos el profile exacto
+      - name: Limpiar Símbolos de Depuración (Reducir de 26MB a ~4.5MB)
+        # Usamos la herramienta llvm-strip del NDK para recortar el peso del binario al mínimo
         run: |
-          mkdir -p wcp_final
-          cp build/box64 wcp_final/
-          
-          # Escribimos el archivo profile.json idéntico al que me mostraste
-          cat << 'EOF' > wcp_final/profile.json
-          {
-            "type": "Box64",
-            "versionName": "0.3.6-T618",
-            "versionCode": 1,
-            "description": "Box64 optimizado para Unisoc T618 y Mali-G52.",
-            "files": [
-              {
-                "source": "box64",
-                "target": "${bindir}/box64"
-              }
-            ]
-          }
-          EOF
-          
-          # Entramos a la carpeta para comprimir los dos archivos sueltos en la raíz
-          cd wcp_final
-          zip -r ../box64-t618-bionic.wcp box64 profile.json
+          $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip --strip-all build/box64
 
-      - name: Guardar Archivo Compilado (.WCP Oficial)
+      - name: Empaquetar en Formato WCP (Solo Binario Suelto en Raíz)
+        run: |
+          mkdir -p wcp_plano
+          cp build/box64 wcp_plano/
+          cd wcp_plano
+          zip -r ../box64-t618-bionic.wcp box64
+
+      - name: Guardar Archivo Compilado (.WCP Liviano)
         uses: actions/upload-artifact@v4
         with:
           name: box64-t618-bionic.wcp
