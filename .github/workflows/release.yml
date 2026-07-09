@@ -20,7 +20,6 @@ jobs:
           ndk-version: '25.2.9519653'
 
       - name: Configurar CMake e Inyectar Toolchain del NDK
-        # Elevamos el parámetro ANDROID_PLATFORM a android-28 para habilitar las funciones de hilos faltantes
         run: |
           mkdir build && cd build
           cmake .. \
@@ -39,17 +38,15 @@ jobs:
           cd build
           ninja
 
-      - name: Empaquetar en Formato WCP (Estructura Limpia Raíz)
+      - name: Empaquetar en Formato WCP (Solo Binario en la Raíz)
+        # Eliminamos carpetas secundarias (como bin/) y no creamos ningún archivo .json
         run: |
-          mkdir -p wcp_content/bin
-          cp build/box64 wcp_content/bin/
+          mkdir -p wcp_plano
+          cp build/box64 wcp_plano/
           
-          # Manifiesto JSON con los metadatos de tu perfil de hardware
-          echo '{"name": "Box64 Unisoc T618 Mali-G52", "version": "Custom-Mali-Vulkan", "architectures": ["arm64"]}' > wcp_content/metadata.json
-          
-          # Entramos a la carpeta para comprimir los elementos sueltos
-          cd wcp_content
-          zip -r ../box64-t618-bionic.wcp .
+          # Entramos a la carpeta y comprimimos solo el archivo box64 suelto
+          cd wcp_plano
+          zip -r ../box64-t618-bionic.wcp box64
 
       - name: Guardar Archivo Compilado (.WCP Directo)
         uses: actions/upload-artifact@v4
