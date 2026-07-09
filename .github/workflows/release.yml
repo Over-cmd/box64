@@ -1,4 +1,4 @@
-name: Compilar Box64 Nativo y Publicar WCP Directo
+name: Compilar Box64 Pipetto Nativo Chroot
 
 on:
   push:
@@ -17,15 +17,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Clonar tu nuevo fork de Box64
+      # 1. Clonar tu fork de Box64 de Pipetto-crypto
       - name: Checkout del repositorio
         uses: actions/checkout@v4
 
-      # 2. Instalar Ninja, dos2unix y utilidades de compresión estándar
+      # 2. Instalar Ninja y herramientas globales
       - name: Instalar Herramientas de Compilación Globales
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build dos2unix zip
+          sudo apt-get install -y ninja-build
 
       # 3. PARCHE GLOBAL DE CÓDIGO: Comentar el pragma FENV en todo el código fuente
       - name: Aplicar Parche de Compatibilidad FENV Global
@@ -37,7 +37,6 @@ jobs:
       # 4. CONFIGURACIÓN Y COMPILACIÓN CON EL ANDROID NDK COMPATIBLE DEL SISTEMA
       - name: Configurar y Compilar Box64 con CMake y Ninja
         run: |
-          # Localizar dinámicamente la carpeta del NDK que GitHub tiene instalada por defecto en la máquina virtual
           REAL_NDK=$(ls -d /usr/local/lib/android/sdk/ndk/* 2>/dev/null | head -n 1)
           echo "Usando Android NDK oficial en la ruta: $REAL_NDK"
           
@@ -64,46 +63,29 @@ jobs:
           
           cmake --build . --parallel $(nproc)
 
-      # 5. ESTRUCTURAR EL PAQUETE .WCP CON EL MANIFIESTO OFICIAL PARA WINLATOR BIONIC
-      - name: Estructurar Paquete WCP Nativo Plano
+      # 5. PARCHE CHROOT: Comprimir el binario individualmente en gzip y renombrarlo a .wcp
+      - name: Generar Archivo WCP Puro Chroot
         run: |
-          mkdir -p wcp_package
+          # Extraemos el binario ejecutable final y le otorgamos permisos máximos chroot (777)
+          cp build/box64 ./box64
+          chmod 777 ./box64
           
-          # Copiar el binario ejecutable final y otorgar permisos de ejecución
-          cp build/box64 wcp_package/box64
-          chmod +x wcp_package/box64
-
-          # Generar la firma manifest.json requerida por el instalador de Winlator Bionic
-          cat << 'EOF' > wcp_package/manifest.json
-          {
-            "id": "box64",
-            "name": "Box64 T618 FastMath",
-            "type": "box64",
-            "version": "1.0",
-            "author": "Over-cmd",
-            "description": "Box64 optimizado para Unisoc Tiger T618",
-            "exec": "box64",
-            "install_path": "box64"
-          }
-          EOF
-
-          # Asegurar formato Unix (LF) puro en el manifest.json
-          dos2unix wcp_package/manifest.json
+          # Comprimimos sin guardar nombres ni marcas de tiempo originales (-n) para evitar cabeceras extras
+          gzip -n -9 ./box64
           
-          # ESTRUCTURA 100% PLANA REQUERIDA: Comprimimos usando zip plano sin carpetas fantasma
-          cd wcp_package
-          zip -q -j ../box64_t618_wcp.wcp box64 manifest.json
-          cd ..
+          # Cambiamos el formato de salida directamente a box64.wcp sin carpetas ni json
+          mv ./box64.gz ./box64.wcp
+          echo "¡Archivo box64.wcp chroot individual generado con éxito!"
 
-      # 6. PUBLICACIÓN ULTRA ROBUSTA NATIVA CON LA CONSOLA OFICIAL 'GH'
-      - name: Publicar archivo .WCP en Releases de forma Nativa
+      # 6. PUBLICACIÓN DIRECTA EN RELEASES CON EL ARCHIVO .WCP COMPATIBLE
+      - name: Publicar archivo box64.wcp en Releases de forma Nativa
         run: |
           TAG_NAME="v1.0.${{ github.run_number }}"
           echo "Creando Release oficial nativa en el servidor bajo el tag: $TAG_NAME"
           
           gh release create "$TAG_NAME" \
-            --title "Box64 Pipetto Unisoc T618 WCP (Build #${{ github.run_number }})" \
-            --notes "Box64 Dynarec optimizado para CPUs Cortex-A75 y Winlator Bionic con soporte Vulkan 1.1." \
-            box64_t618_wcp.wcp
+            --title "Box64 T618 Chroot WCP (Build #${{ github.run_number }})" \
+            --notes "Archivo box64.wcp puro sin manifest y sin carpetas optimizado para el chroot de Winlator Steven-MXZ." \
+            box64.wcp
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
