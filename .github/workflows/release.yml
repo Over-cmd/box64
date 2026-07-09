@@ -21,30 +21,24 @@ jobs:
       - name: Checkout del repositorio
         uses: actions/checkout@v4
 
-      # 2. Instalar Ninja, dos2unix y utilidades estándar
+      # 2. Instalar Ninja, dos2unix y utilidades de compresión estándar
       - name: Instalar Herramientas de Compilación Globales
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build dos2unix
+          sudo apt-get install -y ninja-build dos2unix zip
 
-      # 3. Configurar Android SDK y NDK oficiales estables de GitHub
-      - name: Configurar Android SDK y NDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'ndk;25.2.9519653'
-
-      # 4. PARCHE GLOBAL DE CÓDIGO: Comentar el pragma FENV en todo el código fuente
+      # 3. PARCHE GLOBAL DE CÓDIGO: Comentar el pragma FENV en todo el código fuente
       - name: Aplicar Parche de Compatibilidad FENV Global
         run: |
           echo "Buscando y comentando directivas FENV_ACCESS en el repositorio..."
           find . -type f \( -name "*.c" -o -name "*.h" \) -exec sed -i 's/#pragma STDC FENV_ACCESS ON/\/\/ #pragma STDC FENV_ACCESS ON/g' {} +
           echo "¡Parche global aplicado con éxito!"
 
-      # 5. CONFIGURACIÓN Y COMPILACIÓN FORZADA CON EL NDK DE ANDROID
+      # 4. CONFIGURACIÓN Y COMPILACIÓN CON EL ANDROID NDK COMPATIBLE DEL SISTEMA
       - name: Configurar y Compilar Box64 con CMake y Ninja
         run: |
-          # Ubicar el NDK configurado en el paso anterior
-          REAL_NDK=$ANDROID_NDK_HOME
+          # Localizar dinámicamente la carpeta del NDK que GitHub tiene instalada por defecto en la máquina virtual
+          REAL_NDK=$(ls -d /usr/local/lib/android/sdk/ndk/* 2>/dev/null | head -n 1)
           echo "Usando Android NDK oficial en la ruta: $REAL_NDK"
           
           export CC=$REAL_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang
@@ -70,14 +64,14 @@ jobs:
           
           cmake --build . --parallel $(nproc)
 
-      # 6. ESTRUCTURAR EL PAQUETE .WCP CON EL MANIFIESTO OFICIAL PARA WINLATOR BIONIC
+      # 5. ESTRUCTURAR EL PAQUETE .WCP CON EL MANIFIESTO OFICIAL PARA WINLATOR BIONIC
       - name: Estructurar Paquete WCP Nativo Plano
         run: |
           mkdir -p wcp_package
           
-          # Copiar el binario ejecutable final y otorgar permisos
+          # Copiar el binario ejecutable final y otorgar permisos de ejecución
           cp build/box64 wcp_package/box64
-          chmod 777 wcp_package/box64
+          chmod +x wcp_package/box64
 
           # Generar la firma manifest.json requerida por el instalador de Winlator Bionic
           cat << 'EOF' > wcp_package/manifest.json
@@ -96,20 +90,20 @@ jobs:
           # Asegurar formato Unix (LF) puro en el manifest.json
           dos2unix wcp_package/manifest.json
           
-          # Compresión Tar+Gz empaquetada como .wcp (Estándar nativo de Winlator Bionic)
+          # ESTRUCTURA 100% PLANA REQUERIDA: Comprimimos usando zip plano sin carpetas fantasma
           cd wcp_package
-          tar -czf ../box64_t618_wcp.wcp box64 manifest.json
+          zip -q -j ../box64_t618_wcp.wcp box64 manifest.json
           cd ..
 
-    # 7. PUBLICACIÓN DIRECTA EN RELEASES CON EL ARCHIVO .WCP COMPATIBLE
-    - name: Publicar archivo .WCP en Releases de forma Nativa
-      run: |
-        TAG_NAME="v1.0.${{ github.run_number }}"
-        echo "Creando Release oficial nativa en el servidor bajo el tag: $TAG_NAME"
-        
-        gh release create "$TAG_NAME" \
-          --title "Box64 Pipetto Unisoc T618 WCP (Build #${{ github.run_number }})" \
-          --notes "Box64 Dynarec optimizado para CPUs Cortex-A75 y Winlator Bionic con soporte Vulkan 1.1." \
-          box64_t618_wcp.wcp
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 6. PUBLICACIÓN ULTRA ROBUSTA NATIVA CON LA CONSOLA OFICIAL 'GH'
+      - name: Publicar archivo .WCP en Releases de forma Nativa
+        run: |
+          TAG_NAME="v1.0.${{ github.run_number }}"
+          echo "Creando Release oficial nativa en el servidor bajo el tag: $TAG_NAME"
+          
+          gh release create "$TAG_NAME" \
+            --title "Box64 Pipetto Unisoc T618 WCP (Build #${{ github.run_number }})" \
+            --notes "Box64 Dynarec optimizado para CPUs Cortex-A75 y Winlator Bionic con soporte Vulkan 1.1." \
+            box64_t618_wcp.wcp
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
