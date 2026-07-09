@@ -1,4 +1,4 @@
-name: Compilar Box64 Pipetto Nativo Chroot
+name: Compilar Box64 Pipetto Nativo WCP Puro
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
       - name: Instalar Herramientas de Compilación Globales
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build
+          sudo apt-get install -y ninja-build python3
 
       # 3. PARCHE GLOBAL DE CÓDIGO: Comentar el pragma FENV en todo el código fuente
       - name: Aplicar Parche de Compatibilidad FENV Global
@@ -63,32 +63,29 @@ jobs:
           
           cmake --build . --parallel $(nproc)
 
-      # 5. PARCHE CHROOT TAR: Empaquetar el binario suelto en formato TAR puro renombrado a .wcp
-      - name: Generar Archivo WCP Puro Chroot
+      # 5. PARCHE PYTHON DE EMPAQUETADO COMPATIBLE: Genera el .wcp con cabeceras ZIP estándar limpias
+      - name: Generar Archivo WCP Puro Individual con Python
         run: |
-          mkdir -p wcp_package
+          cp build/box64 ./box64
+          chmod 755 ./box64
           
-          # Copiar el binario ejecutable final y otorgar permisos root chroot (777)
-          cp build/box64 wcp_package/box64
-          chmod 777 wcp_package/box64
-          
-          # ESTRUCTURA REQUERIDA: Entramos a la carpeta y creamos un archivo TAR plano.
-          # Esto guarda el archivo 'box64' completamente suelto en la raíz del empaquetado.
-          cd wcp_package
-          tar -cf ../box64.wcp box64
-          cd ..
-          
-          echo "¡Archivo box64.wcp TAR individual generado con éxito!"
+          # Ejecutamos un script en línea de Python para empaquetar el binario box64 suelto en la raíz
+          python3 -c '
+          import zipfile
+          with zipfile.ZipFile("box64.wcp", "w", zipfile.ZIP_DEFLATED) as z:
+              z.write("box64", "box64")
+          '
+          echo "¡Archivo box64.wcp de compatibilidad universal generado con éxito!"
 
-      # 6. PUBLICACIÓN DIRECTA EN RELEASES CON EL ARCHIVO .WCP COMPATIBLE
+      # 6. PUBLICACIÓN DIRECTA EN RELEASES CON EL ARCHIVO .WCP COMPATIBLE CON BIONIC
       - name: Publicar archivo box64.wcp en Releases de forma Nativa
         run: |
           TAG_NAME="v1.0.${{ github.run_number }}"
           echo "Creando Release oficial nativa en el servidor bajo el tag: $TAG_NAME"
           
           gh release create "$TAG_NAME" \
-            --title "Box64 T618 Chroot WCP (Build #${{ github.run_number }})" \
-            --notes "Archivo box64.wcp empaquetado en TAR puro sin manifest y sin carpetas para Winlator Steven-MXZ." \
+            --title "Box64 T618 WCP Puro (Build #${{ github.run_number }})" \
+            --notes "Archivo box64.wcp empaquetado de forma individual con Python para Winlator Bionic." \
             box64.wcp
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
