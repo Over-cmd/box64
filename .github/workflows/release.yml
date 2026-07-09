@@ -63,19 +63,22 @@ jobs:
           
           cmake --build . --parallel $(nproc)
 
-      # 5. PARCHE CHROOT: Comprimir el binario individualmente en gzip y renombrarlo a .wcp
+      # 5. PARCHE CHROOT TAR: Empaquetar el binario suelto en formato TAR puro renombrado a .wcp
       - name: Generar Archivo WCP Puro Chroot
         run: |
-          # Extraemos el binario ejecutable final y le otorgamos permisos máximos chroot (777)
-          cp build/box64 ./box64
-          chmod 777 ./box64
+          mkdir -p wcp_package
           
-          # Comprimimos sin guardar nombres ni marcas de tiempo originales (-n) para evitar cabeceras extras
-          gzip -n -9 ./box64
+          # Copiar el binario ejecutable final y otorgar permisos root chroot (777)
+          cp build/box64 wcp_package/box64
+          chmod 777 wcp_package/box64
           
-          # Cambiamos el formato de salida directamente a box64.wcp sin carpetas ni json
-          mv ./box64.gz ./box64.wcp
-          echo "¡Archivo box64.wcp chroot individual generado con éxito!"
+          # ESTRUCTURA REQUERIDA: Entramos a la carpeta y creamos un archivo TAR plano.
+          # Esto guarda el archivo 'box64' completamente suelto en la raíz del empaquetado.
+          cd wcp_package
+          tar -cf ../box64.wcp box64
+          cd ..
+          
+          echo "¡Archivo box64.wcp TAR individual generado con éxito!"
 
       # 6. PUBLICACIÓN DIRECTA EN RELEASES CON EL ARCHIVO .WCP COMPATIBLE
       - name: Publicar archivo box64.wcp en Releases de forma Nativa
@@ -85,7 +88,7 @@ jobs:
           
           gh release create "$TAG_NAME" \
             --title "Box64 T618 Chroot WCP (Build #${{ github.run_number }})" \
-            --notes "Archivo box64.wcp puro sin manifest y sin carpetas optimizado para el chroot de Winlator Steven-MXZ." \
+            --notes "Archivo box64.wcp empaquetado en TAR puro sin manifest y sin carpetas para Winlator Steven-MXZ." \
             box64.wcp
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
