@@ -20,14 +20,13 @@ jobs:
           ndk-version: '25.2.9519653'
 
       - name: Configurar CMake e Inyectar Toolchain del NDK
-        # Forzamos el uso de Clang del NDK para resolver los conflictos de librerías de señales
+        # Elevamos el parámetro ANDROID_PLATFORM a android-28 para habilitar las funciones de hilos faltantes
         run: |
           mkdir build && cd build
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
-            -DCMAKE_C_COMPILER=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang \
             -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-24 \
+            -DANDROID_PLATFORM=android-28 \
             -DCMAKE_BUILD_TYPE=Release \
             -DARM64=1 \
             -DLD80BITS=1 \
@@ -41,12 +40,11 @@ jobs:
           ninja
 
       - name: Empaquetar en Formato WCP (Estructura Limpia Raíz)
-        # Estructuramos el binario y el manifiesto directamente en la raíz del archivo comprimido
         run: |
           mkdir -p wcp_content/bin
           cp build/box64 wcp_content/bin/
           
-          # Manifiesto JSON con los metadatos exactos de tu perfil de hardware
+          # Manifiesto JSON con los metadatos de tu perfil de hardware
           echo '{"name": "Box64 Unisoc T618 Mali-G52", "version": "Custom-Mali-Vulkan", "architectures": ["arm64"]}' > wcp_content/metadata.json
           
           # Entramos a la carpeta para comprimir los elementos sueltos
@@ -58,5 +56,4 @@ jobs:
         with:
           name: box64-t618-bionic.wcp
           path: box64-t618-bionic.wcp
-          # Evitamos que GitHub empaquete el archivo dentro de otro ZIP redundante
           compression-level: 0
