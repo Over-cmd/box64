@@ -1,33 +1,35 @@
-name: Compilar Box64 Nativo de Contenedor para Unisoc T618
+name: Compilar Box64 WCP para Unisoc T618
 on:
   workflow_dispatch:
 
 jobs:
-  build-linux-container:
+  build-android-wcp:
     runs-on: ubuntu-latest
     steps:
       - name: Descargar Código Fuente
         uses: actions/checkout@v4
 
-      - name: Configurar e Instalar Herramientas de Linux
+      - name: Configurar e Instalar Herramientas
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake python3 ninja-build gcc-aarch64-linux-gnu g++-aarch64-linux-gnu zip
+          sudo apt-get install -y cmake python3 ninja-build zip
 
-      - name: Configurar CMake para el Entorno del Contenedor
-        # Usamos el compilador cruzado de Linux y activamos -DTERMUX=1 para saltarnos el error de las señales y threads
+      - name: Configurar NDK de Android
+        uses: android-actions/setup-android@v3
+        with:
+          ndk-version: '25.2.9519653'
+
+      - name: Configurar CMake e Inyectar Toolchain del NDK
         run: |
           mkdir build && cd build
           cmake .. \
-            -DCMAKE_SYSTEM_NAME=Linux \
-            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
-            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-28 \
             -DCMAKE_BUILD_TYPE=Release \
             -DARM64=1 \
             -DLD80BITS=1 \
             -DNO_MUTEX_LOG=1 \
-            -DTERMUX=1 \
             -DCMAKE_C_FLAGS="-O3 -march=armv8-a+crc+crypto -mtune=cortex-a75" \
             -G Ninja
 
@@ -36,16 +38,35 @@ jobs:
           cd build
           ninja
 
-      - name: Empaquetar solo el Binario Suelto
+      - name: Empaquetar Estructura WCP Oficial (Con profile.json)
+        # Creamos una carpeta temporal suelta, movemos el binario y generamos el profile exacto
         run: |
-          mkdir -p contenedor_plano
-          cp build/box64 contenedor_plano/
-          cd contenedor_plano
-          zip -r ../box64-contenedor-t618.wcp box64
+          mkdir -p wcp_final
+          cp build/box64 wcp_final/
+          
+          # Escribimos el archivo profile.json idéntico al que me mostraste
+          cat << 'EOF' > wcp_final/profile.json
+          {
+            "type": "Box64",
+            "versionName": "0.3.6-T618",
+            "versionCode": 1,
+            "description": "Box64 optimizado para Unisoc T618 y Mali-G52.",
+            "files": [
+              {
+                "source": "box64",
+                "target": "${bindir}/box64"
+              }
+            ]
+          }
+          EOF
+          
+          # Entramos a la carpeta para comprimir los dos archivos sueltos en la raíz
+          cd wcp_final
+          zip -r ../box64-t618-bionic.wcp box64 profile.json
 
-      - name: Guardar Archivo Compilado (.WCP Plano)
+      - name: Guardar Archivo Compilado (.WCP Oficial)
         uses: actions/upload-artifact@v4
         with:
-          name: box64-contenedor-t618.wcp
-          path: box64-contenedor-t618.wcp
+          name: box64-t618-bionic.wcp
+          path: box64-t618-bionic.wcp
           compression-level: 0
