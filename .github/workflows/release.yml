@@ -63,19 +63,27 @@ jobs:
           
           cmake --build . --parallel $(nproc)
 
-      # 5. PARCHE PYTHON DE EMPAQUETADO COMPATIBLE: Genera el .wcp con cabeceras ZIP estándar limpias
-      - name: Generar Archivo WCP Puro Individual con Python
+      # 5. PARCHE PYTHON TAR.GZ DE COMPATIBILIDAD MÓVIL: Genera el .wcp omitiendo IDs de propietario que congelan Android
+      - name: Generar Archivo WCP Puro Individual con Python (Formato Tar.Gz)
         run: |
           cp build/box64 ./box64
           chmod 755 ./box64
           
-          # Ejecutamos un script en línea de Python para empaquetar el binario box64 suelto en la raíz
+          # Script en línea de Python para crear un tar.gz empaquetado como .wcp plano
           python3 -c '
-          import zipfile
-          with zipfile.ZipFile("box64.wcp", "w", zipfile.ZIP_DEFLATED) as z:
-              z.write("box64", "box64")
+          import tarfile
+          import os
+          
+          with tarfile.open("box64.wcp", "w:gz") as tar:
+              # Forzamos que el propietario del archivo sea "root" con UID/GID 0 estándar de Android
+              info = tar.gettarinfo("box64", "box64")
+              info.uid = 0
+              info.gid = 0
+              info.uname = "root"
+              info.gname = "root"
+              tar.addfile(info, open("box64", "rb"))
           '
-          echo "¡Archivo box64.wcp de compatibilidad universal generado con éxito!"
+          echo "¡Archivo box64.wcp de compatibilidad Tar.Gz generado de forma limpia!"
 
       # 6. PUBLICACIÓN DIRECTA EN RELEASES CON EL ARCHIVO .WCP COMPATIBLE CON BIONIC
       - name: Publicar archivo box64.wcp en Releases de forma Nativa
@@ -84,8 +92,8 @@ jobs:
           echo "Creando Release oficial nativa en el servidor bajo el tag: $TAG_NAME"
           
           gh release create "$TAG_NAME" \
-            --title "Box64 T618 WCP Puro (Build #${{ github.run_number }})" \
-            --notes "Archivo box64.wcp empaquetado de forma individual con Python para Winlator Bionic." \
+            --title "Box64 T618 WCP TarGz (Build #${{ github.run_number }})" \
+            --notes "Archivo box64.wcp empaquetado individualmente en formato Tar.Gz limpio mediante Python para Winlator Bionic." \
             box64.wcp
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
