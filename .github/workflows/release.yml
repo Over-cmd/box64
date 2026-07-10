@@ -93,36 +93,33 @@ jobs:
 
       - name: "Generate Winlator Package Structure"
         run: |
-          # 1. Creamos la carpeta interna del contenedor
-          mkdir -p package/content
+          # Creación del directorio temporal de empaquetado plano
+          mkdir -p package_flat
           
-          # 2. Copiamos el binario compilado a la carpeta content
-          cp build/box64 package/content/box64
+          # Copiamos el ejecutable directamente a la raíz del directorio temporal
+          cp build/box64 package_flat/box64
           
-          # 3. Creamos el archivo profile.json con la ruta de origen corregida ("content/box64")
-          cat << 'EOF' > package/profile.json
+          # Escribimos tu estructura JSON exacta directamente en la raíz al lado de box64
+          cat << 'EOF' > package_flat/profile.json
           {
             "type": "Box64",
-            "verName": "t618",
-            "verCode": 999,
-            "description": "Box64 t618 Release para GPU Mali G52 Vulkan 1.1.",
+            "versionName": "t618",
+            "versionCode": 0,
+            "description": "Box64 t618 Release.",
             "files": [
               {
-                "source": "content/box64",
+                "source": "box64",
                 "target": "${bindir}/box64"
               }       
             ]
           }
           EOF
-          
-          # 4. Ponemos una copia exacta de profile.json JUNTO a box64 en la misma carpeta interna
-          cp package/profile.json package/content/profile.json
 
-      - name: "Compile into .wcp Package (Zstandard Format)"
+      - name: "Compile into .wcp Package (Zstandard Flat Format)"
         run: |
-          cd package
-          # Empaquetamos todo asegurando la estructura dual con compresión .tar.zst
-          tar --zstd -cf ../box64-t618.wcp profile.json content/
+          cd package_flat
+          # Empaquetamos los archivos sueltos usando compresión zstd desde la raíz
+          tar --zstd -cf ../box64-t618.wcp profile.json box64
           
       - name: "Upload WCP Artifact"
         uses: actions/upload-artifact@v4
