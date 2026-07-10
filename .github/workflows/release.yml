@@ -93,19 +93,27 @@ jobs:
 
       - name: "Generate Winlator Package Structure"
         run: |
-          # Creación del directorio temporal de empaquetado plano
           mkdir -p package_flat
-          
-          # Copiamos el ejecutable directamente a la raíz del directorio temporal
           cp build/box64 package_flat/box64
           
-          # Escribimos tu estructura JSON exacta directamente en la raíz al lado de box64
+          # Creación del profile.json optimizado para BCN Layer por Compute Shaders
           cat << 'EOF' > package_flat/profile.json
           {
             "type": "Box64",
             "versionName": "t618",
             "versionCode": 0,
             "description": "Box64 t618 Release.",
+            "env": {
+              "BOX64_DYNAREC": "1",
+              "BOX64_DYNAREC_WEAKBARRIER": "1",
+              "BOX64_DYNAREC_FASTNAN": "1",
+              "BOX64_DYNAREC_SAFEFLAGS": "1",
+              "ENABLE_BCN_LAYER": "1",
+              "BCN_USE_COMPUTE": "1",
+              "DXVK_ASYNC": "1",
+              "VK_ICD_FILENAMES": "/system/vendor/etc/vulkan/icd.d/mali.json",
+              "BOX64_WAITID": "1"
+            },
             "files": [
               {
                 "source": "box64",
@@ -118,7 +126,6 @@ jobs:
       - name: "Compile into .wcp Package (Zstandard Flat Format)"
         run: |
           cd package_flat
-          # Empaquetamos los archivos sueltos usando compresión zstd desde la raíz
           tar --zstd -cf ../box64-t618.wcp profile.json box64
           
       - name: "Upload WCP Artifact"
