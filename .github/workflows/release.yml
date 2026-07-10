@@ -54,8 +54,7 @@ jobs:
       - name: "Environment preparation"
         run: |
           sudo apt-get update
-          # Instalamos libc6-dev-arm64-cross para permitir compilación estática cruzada hacia Android/ARM64
-          sudo apt-get -y install git gcc-aarch64-linux-gnu cmake make python3 tar zstd libc6-dev-arm64-cross
+          sudo apt-get -y install git gcc-aarch64-linux-gnu cmake make python3 tar zstd
           
           if [[ ${{ github.event.inputs.platform }} == 'T618' ]]; then
             echo "BOX64_PLATFORM_MARCRO=-DARM64=1" >> $GITHUB_ENV
@@ -85,12 +84,12 @@ jobs:
         run: |
           mkdir build
           cd build
-          # Pasamos flags de enlazado estático (-static) para máxima compatibilidad con el entorno Android NDK
+          # Reemplazamos -static por el flag de hash SysV para compatibilidad con el linker de Android
           cmake .. -DCMAKE_C_COMPILER=${{ env.BOX64_COMPILER }} ${{ env.BOX64_PLATFORM_MARCRO }}\
                    -DCMAKE_BUILD_TYPE=${{ github.event.inputs.build_type }}\
                    -DARM_DYNAREC:BOOL=${{ github.event.inputs.dynarec }}\
                    -DHAVE_TRACE:BOOL=${{ github.event.inputs.trace }}\
-                   -DCMAKE_EXE_LINKER_FLAGS="-static" \
+                   -DCMAKE_EXE_LINKER_FLAGS="-Wl,--hash-style=sysv" \
                    -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON
           make -j$(nproc) VERBOSE=1
 
@@ -99,7 +98,7 @@ jobs:
           mkdir -p package_flat
           cp build/box64 package_flat/box64
           
-          # Estructura limpia y plana. Eliminamos las variables de entorno conflictivas que crashean el arranque inicial
+          # Manteniendo tu estructura JSON exacta y las variables clave para pippetocrypto/bcn_layer por Compute Shaders
           cat << 'EOF' > package_flat/profile.json
           {
             "type": "Box64",
@@ -108,6 +107,7 @@ jobs:
             "description": "Box64 t618 Release.",
             "env": {
               "BOX64_DYNAREC": "1",
+              "BOX64_DYNAREC_SAFEFLAGS": "1",
               "ENABLE_BCN_LAYER": "1",
               "BCN_USE_COMPUTE": "1",
               "DXVK_ASYNC": "1"
