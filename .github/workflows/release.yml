@@ -1,28 +1,12 @@
 name: Custom build Box64 for Winlator
 
 on:
+  push:
+    branches:
+      - main
+      - master
   workflow_dispatch:
     inputs:
-      platform:
-        description: 'Target platform name'
-        required: true
-        default: 'T618'
-        type: choice
-        options:
-        - T618
-        - X64
-        - GENERIC_ARM
-        - PHYTIUM
-        - RK3326
-        - RK3399
-        - RK3588
-        - RPI4ARM64
-        - RPI5ARM64
-        - SD845
-        - SD888
-        - ADLINK
-        - TEGRAX1
-        - ARM64
       build_type:
         description: 'Build type'
         required: true
@@ -44,6 +28,11 @@ on:
         default: 'false'
         type: boolean
 
+permissions:
+  contents: write
+  packages: write
+  actions: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -54,41 +43,27 @@ jobs:
       - name: "Environment preparation"
         run: |
           sudo apt-get update
-          sudo apt-get -y install git gcc-aarch64-linux-gnu cmake make python3 tar zstd
-          
-          if [[ ${{ github.event.inputs.platform }} == 'T618' ]]; then
-            echo "BOX64_PLATFORM_MARCRO=-DARM64=1" >> $GITHUB_ENV
-            echo "BOX64_COMPILER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-          elif [[ ${{ github.event.inputs.platform }} != 'X64' && ${{ github.event.inputs.platform }} != 'GENERIC_ARM' ]]; then
-            echo "BOX64_PLATFORM_MARCRO=-D${{ github.event.inputs.platform }}=1" >> $GITHUB_ENV
-            echo "BOX64_COMPILER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-          else
-            if [[ ${{ github.event.inputs.platform }} == 'X64' ]]; then
-              echo "BOX64_PLATFORM_MARCRO=-DLD80BITS=1 -DNOALIGN=1" >> $GITHUB_ENV
-              echo "BOX64_COMPILER=gcc" >> $GITHUB_ENV
-            else
-              echo BOX64_PLATFORM_MARCRO="-DARM_DYNAREC=ON" >> $GITHUB_ENV
-              echo "BOX64_COMPILER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-            fi
-          fi
+          sudo apt-get -y install git gcc-aarch64-linux-gnu cmake make python3 tar zstd dos2unix
 
-      - name: "Display Build info"
+      # PARCHE GLOBAL DE CÓDIGO: Comentar el pragma FENV en todo el código fuente de Pipetto-crypto para permitir optimizaciones
+      - name: "Apply Global FENV Compatibility Patch"
         run: |
-          echo "CMake Platform Macro: ${{ env.BOX64_PLATFORM_MARCRO }}"
-          echo "CMake C Compiler: ${{ env.BOX64_COMPILER }}"
-          echo "Build type: ${{ github.event.inputs.build_type }}"
-          echo "Dynarec Enabled: ${{ github.event.inputs.dynarec }}"
-          echo "Trace Enabled: ${{ github.event.inputs.trace }}"
+          echo "Buscando y comentando directivas FENV_ACCESS en el repositorio..."
+          find . -type f \( -name "*.c" -o -name "*.h" \) -exec sed -i 's/#pragma STDC FENV_ACCESS ON/\/\/ #pragma STDC FENV_ACCESS ON/g' {} +
+          echo "¡Parche global aplicado con éxito!"
 
       - name: "Build Box64"
         run: |
           mkdir build
           cd build
-          # Reemplazamos -static por el flag de hash SysV para compatibilidad con el linker de Android
-          cmake .. -DCMAKE_C_COMPILER=${{ env.BOX64_COMPILER }} ${{ env.BOX64_PLATFORM_MARCRO }}\
-                   -DCMAKE_BUILD_TYPE=${{ github.event.inputs.build_type }}\
-                   -DARM_DYNAREC:BOOL=${{ github.event.inputs.dynarec }}\
-                   -DHAVE_TRACE:BOOL=${{ github.event.inputs.trace }}\
+          # Configuración nativa forzada para el chip Unisoc T618 usando el compilador cruzado ARM64 y el hash SysV de Android
+          cmake .. -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+                   -DARM64=1 \
+                   -DCMAKE_BUILD_TYPE=${{ github.event.inputs.build_type || 'Release' }}\
+                   -DARM_DYNAREC:BOOL=${{ github.event.inputs.dynarec || 'true' }}\
+                   -DHAVE_TRACE:BOOL=${{ github.event.inputs.trace || 'false' }}\
+                   -DCMAKE_C_FLAGS="-O3 -fno-trapping-math -ffinite-math-only" \
+                   -DCMAKE_CXX_FLAGS="-O3 -fno-trapping-math -ffinite-math-only" \
                    -DCMAKE_EXE_LINKER_FLAGS="-Wl,--hash-style=sysv" \
                    -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON
           make -j$(nproc) VERBOSE=1
@@ -97,19 +72,23 @@ jobs:
         run: |
           mkdir -p package_flat
           cp build/box64 package_flat/box64
+          chmod +x package_flat/box64
           
-          # Manteniendo tu estructura JSON exacta y las variables clave para pippetocrypto/bcn_layer por Compute Shaders
+          # Inyectamos tu estructura oficial exacta mapeando las variables de tu bcn_layer por Compute Shaders
           cat << 'EOF' > package_flat/profile.json
           {
             "type": "Box64",
-            "versionName": "t618",
-            "versionCode": 0,
-            "description": "Box64 t618 Release.",
+            "versionName": "t618-fastmath",
+            "versionCode": 1,
+            "description": "Box64 T618 optimizado con ffast-math y soporte BCN Compute Shaders.",
             "env": {
               "BOX64_DYNAREC": "1",
               "BOX64_DYNAREC_SAFEFLAGS": "1",
+              "BOX64_DYNAREC_BIGBLOCK": "1",
               "ENABLE_BCN_LAYER": "1",
               "BCN_USE_COMPUTE": "1",
+              "BCN_COMPUTE_AUTO": "1",
+              "BCN_COMPUTE_IMAGE_VIEW": "1",
               "DXVK_ASYNC": "1"
             },
             "files": [
@@ -120,14 +99,26 @@ jobs:
             ]
           }
           EOF
+          
+          # Forzar codificación Unix (LF) para evitar rechazos en el instalador de Android
+          dos2unix package_flat/profile.json
 
       - name: "Compile into .wcp Package (Zstandard Flat Format)"
         run: |
           cd package_flat
-          tar --zstd -cf ../box64-t618.wcp profile.json box64
+          # Empaquetamos profile.json y box64 sueltos en la raíz usando el formato Zstandard compatible
+          tar --zstd -cf ../box64_t618_wcp.wcp profile.json box64
+          cd ..
+
+      # PUBLICACIÓN ULTRA ROBUSTA EN RELEASES: Sube el archivo .wcp directamente a tu cuenta de GitHub
+      - name: "Publish .WCP Package directly to Releases"
+        run: |
+          TAG_NAME="v1.0.${{ github.run_number }}"
+          echo "Creando Release oficial nativa en el servidor bajo el tag: $TAG_NAME"
           
-      - name: "Upload WCP Artifact"
-        uses: actions/upload-artifact@v4
-        with:
-          name: box64-t618-winlator-zst
-          path: box64-t618.wcp
+          gh release create "$TAG_NAME" \
+            --title "Box64 Pipetto T618 WCP (Build #${{ github.run_number }})" \
+            --notes "Box64 Dynarec del repositorio de Pipetto-crypto empaquetado en perfil WCP oficial con soporte BCN Layer activo." \
+            box64_t618_wcp.wcp
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
