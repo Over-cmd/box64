@@ -1,4 +1,4 @@
-name: Custom build Box64
+name: Custom build Box64 for Winlator
 
 on:
   workflow_dispatch:
@@ -54,7 +54,7 @@ jobs:
       - name: "Environment preparation"
         run: |
           sudo apt-get update
-          sudo apt-get -y install git gcc-aarch64-linux-gnu cmake make python3
+          sudo apt-get -y install git gcc-aarch64-linux-gnu cmake make python3 tar xz-utils
           
           if [[ ${{ github.event.inputs.platform }} == 'T618' ]]; then
             echo "BOX64_PLATFORM_MARCRO=-DARM64=1" >> $GITHUB_ENV
@@ -91,27 +91,34 @@ jobs:
                    -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON
           make -j$(nproc) VERBOSE=1
 
-      - name: "Generate profile.json"
+      - name: "Generate Winlator Package Structure"
         run: |
-          cat << 'EOF' > build/profile.json
+          mkdir -p package/content
+          cp build/box64 package/content/box64
+          
+          # Estructura JSON adaptada al parseador estricto de componentes (.wcp)
+          cat << 'EOF' > package/profile.json
           {
             "type": "Box64",
-            "versionName": "t618",
-            "versionCode": 0,
-            "description": "Box64 t618 Release.",
+            "verName": "Box64-T618",
+            "verCode": 100,
+            "description": "Custom Box64 para Unisoc Tiger T618 y GPU Mali-G52.",
             "files": [
               {
-                "source": "box64",
+                "source": "content/box64",
                 "target": "${bindir}/box64"
               }       
             ]
           }
           EOF
 
-      - name: "Upload Artifact"
+      - name: "Compile into .wcp Package (XZ Format)"
+        run: |
+          cd package
+          tar -cJf ../box64-t618.wcp profile.json content/
+          
+      - name: "Upload WCP Artifact"
         uses: actions/upload-artifact@v4
         with:
-          name: box64-${{ github.event.inputs.platform }}-${{ github.event.inputs.build_type }}
-          path: |
-            build/box64
-            build/profile.json
+          name: box64-t618-winlator
+          path: box64-t618.wcp
