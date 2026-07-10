@@ -44,7 +44,7 @@ jobs:
       - name: "Environment preparation"
         run: |
           sudo apt-get update
-          sudo apt-get -y install git ninja-build python3 tar zstd dos2unix
+          sudo apt-get install -y git ninja-build python3 tar zstd dos2unix
 
       # PARCHE GLOBAL DE CÓDIGO: Comentar el pragma FENV en todo el código fuente de Pipetto-crypto para evitar errores de compilación
       - name: "Apply Global FENV Compatibility Patch"
@@ -54,7 +54,6 @@ jobs:
           echo "¡Parche global aplicado con éxito!"
 
       # COMPILACIÓN NATIVA PARA ANDROID BIONIC: Forzamos el uso del NDK de Google local
-      # Buscamos dinámicamente la carpeta instalada para evitar fallos de rutas por actualizaciones del servidor
       - name: "Build Box64 using Android NDK"
         run: |
           REAL_NDK=$(ls -d /usr/local/lib/android/sdk/ndk/* 2>/dev/null | head -n 1)
@@ -87,9 +86,9 @@ jobs:
         run: |
           mkdir -p package_flat
           cp build/box64 package_flat/box64
-          chmod +x package_flat/box64
+          chmod 777 package_flat/box64
           
-          # Inyectamos el profile estructurado bajo las especificaciones exactas del instalador gráfico de Steven-MXZ
+          # Estructura limpia profile.json con soporte BCN Layer activo por Compute Shaders
           cat << 'EOF' > package_flat/profile.json
           {
             "type": "Box64",
@@ -118,10 +117,12 @@ jobs:
           
           dos2unix package_flat/profile.json
 
+      # PARCHE COMPRESIÓN HIGIÉNICA: Forzamos el formato universal antiguo de tar (ustar) 
+      # y borramos los IDs de propietario de PC para que Android no lo rechace.
       - name: "Compile into .wcp Package (Zstandard Flat Format)"
         run: |
           cd package_flat
-          tar --zstd -cf ../box64_t618_wcp.wcp profile.json box64
+          tar --zstd --format=ustar --owner=root:0 --group=root:0 -cf ../box64_t618_wcp.wcp profile.json box64
           cd ..
 
       - name: "Publish .WCP Package directly to Releases"
@@ -131,7 +132,7 @@ jobs:
           
           gh release create "$TAG_NAME" \
             --title "Box64 Pipetto T618 WCP (Build #${{ github.run_number }})" \
-            --notes "Box64 Dynarec compilado de forma nativa con Android NDK para corregir el congelamiento de pantalla y adaptado al perfil Zstandard de Winlator." \
+            --notes "Box64 Dynarec empaquetado bajo formato clásico ustar para evitar el fallo 'install failed' en Winlator." \
             box64_t618_wcp.wcp
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
