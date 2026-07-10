@@ -96,13 +96,13 @@ jobs:
           mkdir -p package/content
           cp build/box64 package/content/box64
           
-          # Estructura JSON adaptada al parseador estricto de componentes (.wcp)
+          # Creación estricta de profile.json requerido por Steven MXZ en la raíz del paquete
           cat << 'EOF' > package/profile.json
           {
             "type": "Box64",
-            "verName": "Box64-T618",
-            "verCode": 100,
-            "description": "Custom Box64 para Unisoc Tiger T618 y GPU Mali-G52.",
+            "verName": "t618",
+            "verCode": 999,
+            "description": "Box64 t618 Release para GPU Mali G52 Vulkan 1.1.",
             "files": [
               {
                 "source": "content/box64",
@@ -112,9 +112,10 @@ jobs:
           }
           EOF
 
-      - name: "Compile into .wcp Package (XZ Format)"
+      - name: "Compile into .wcp Package"
         run: |
           cd package
+          # Se empaquetan profile.json y la carpeta content garantizando que profile.json esté en la raíz del tar.xz
           tar -cJf ../box64-t618.wcp profile.json content/
           
       - name: "Upload WCP Artifact"
