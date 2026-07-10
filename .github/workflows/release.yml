@@ -54,7 +54,7 @@ jobs:
       - name: "Environment preparation"
         run: |
           sudo apt-get update
-          sudo apt-get -y install git gcc-aarch64-linux-gnu cmake make python3 tar xz-utils
+          sudo apt-get -y install git gcc-aarch64-linux-gnu cmake make python3 tar zstd
           
           if [[ ${{ github.event.inputs.platform }} == 'T618' ]]; then
             echo "BOX64_PLATFORM_MARCRO=-DARM64=1" >> $GITHUB_ENV
@@ -93,10 +93,13 @@ jobs:
 
       - name: "Generate Winlator Package Structure"
         run: |
+          # 1. Creamos la carpeta interna del contenedor
           mkdir -p package/content
+          
+          # 2. Copiamos el binario compilado a la carpeta content
           cp build/box64 package/content/box64
           
-          # Creación estricta de profile.json requerido por Steven MXZ en la raíz del paquete
+          # 3. Creamos el archivo profile.json con la ruta de origen corregida ("content/box64")
           cat << 'EOF' > package/profile.json
           {
             "type": "Box64",
@@ -111,15 +114,18 @@ jobs:
             ]
           }
           EOF
+          
+          # 4. Ponemos una copia exacta de profile.json JUNTO a box64 en la misma carpeta interna
+          cp package/profile.json package/content/profile.json
 
-      - name: "Compile into .wcp Package"
+      - name: "Compile into .wcp Package (Zstandard Format)"
         run: |
           cd package
-          # Se empaquetan profile.json y la carpeta content garantizando que profile.json esté en la raíz del tar.xz
-          tar -cJf ../box64-t618.wcp profile.json content/
+          # Empaquetamos todo asegurando la estructura dual con compresión .tar.zst
+          tar --zstd -cf ../box64-t618.wcp profile.json content/
           
       - name: "Upload WCP Artifact"
         uses: actions/upload-artifact@v4
         with:
-          name: box64-t618-winlator
+          name: box64-t618-winlator-zst
           path: box64-t618.wcp
