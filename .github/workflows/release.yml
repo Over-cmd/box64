@@ -91,8 +91,27 @@ jobs:
                    -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON
           make -j$(nproc) VERBOSE=1
 
+      - name: "Generate profile.json"
+        run: |
+          cat << 'EOF' > build/profile.json
+          {
+            "type": "Box64",
+            "versionName": "t618",
+            "versionCode": 0,
+            "description": "Box64 t618 Release.",
+            "files": [
+              {
+                "source": "box64",
+                "target": "${bindir}/box64"
+              }       
+            ]
+          }
+          EOF
+
       - name: "Upload Artifact"
         uses: actions/upload-artifact@v4
         with:
           name: box64-${{ github.event.inputs.platform }}-${{ github.event.inputs.build_type }}
-          path: build/box64
+          path: |
+            build/box64
+            build/profile.json
