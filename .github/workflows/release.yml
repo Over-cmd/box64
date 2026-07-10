@@ -40,33 +40,47 @@ jobs:
       - name: "Checkout Box64 Repository"
         uses: actions/checkout@v4
 
+      # Instalar Ninja y utilidades globales requeridas para el Toolchain de Android
       - name: "Environment preparation"
         run: |
           sudo apt-get update
-          sudo apt-get -y install git gcc-aarch64-linux-gnu cmake make python3 tar zstd dos2unix
+          sudo apt-get -y install git ninja-build python3 tar zstd dos2unix
 
-      # PARCHE GLOBAL DE CÓDIGO: Comentar el pragma FENV en todo el código fuente de Pipetto-crypto para permitir optimizaciones
+      # Configurar el NDK r25 oficial de Google para inyectar el enlazador de Android (Bionic/BionicC)
+      - name: "Configure Android NDK"
+        uses: android-actions/setup-android@v3
+        with:
+          ndk-version: '25.2.9519653'
+
+      # PARCHE GLOBAL DE CÓDIGO: Comentar el pragma FENV en todo el código fuente de Pipetto-crypto para evitar errores de compilación
       - name: "Apply Global FENV Compatibility Patch"
         run: |
           echo "Buscando y comentando directivas FENV_ACCESS en el repositorio..."
           find . -type f \( -name "*.c" -o -name "*.h" \) -exec sed -i 's/#pragma STDC FENV_ACCESS ON/\/\/ #pragma STDC FENV_ACCESS ON/g' {} +
           echo "¡Parche global aplicado con éxito!"
 
-      - name: "Build Box64"
+      # COMPILACIÓN NATIVA PARA ANDROID BIONIC: Forzamos el uso del NDK de Google
+      # Esto elimina el crash silencioso que congela el contenedor en 'Starting up'
+      - name: "Build Box64 using Android NDK"
         run: |
           mkdir build
           cd build
-          # Configuración nativa forzada para el chip Unisoc T618 usando el compilador cruzado ARM64 y el hash SysV de Android
-          cmake .. -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
-                   -DARM64=1 \
+          cmake .. -G "Ninja" \
+                   -DCMAKE_MAKE_PROGRAM=$(which ninja) \
+                   -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+                   -DANDROID_ABI=arm64-v8a \
+                   -DANDROID_PLATFORM=android-29 \
                    -DCMAKE_BUILD_TYPE=${{ github.event.inputs.build_type || 'Release' }}\
-                   -DARM_DYNAREC:BOOL=${{ github.event.inputs.dynarec || 'true' }}\
-                   -DHAVE_TRACE:BOOL=${{ github.event.inputs.trace || 'false' }}\
+                   -DANDROID=ON \
+                   -DLINUX=OFF \
+                   -DARM_DYNAREC=ON \
+                   -DARCH64=ON \
+                   -DARM_CPU=cortex-a75 \
                    -DCMAKE_C_FLAGS="-O3 -fno-trapping-math -ffinite-math-only" \
                    -DCMAKE_CXX_FLAGS="-O3 -fno-trapping-math -ffinite-math-only" \
                    -DCMAKE_EXE_LINKER_FLAGS="-Wl,--hash-style=sysv" \
                    -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON
-          make -j$(nproc) VERBOSE=1
+          ninja
 
       - name: "Generate Winlator Package Structure"
         run: |
@@ -74,17 +88,18 @@ jobs:
           cp build/box64 package_flat/box64
           chmod +x package_flat/box64
           
-          # Inyectamos tu estructura oficial exacta mapeando las variables de tu bcn_layer por Compute Shaders
+          # Inyectamos el profile con las variables pulidas para evitar bucles infinitos en el inicio del contenedor
           cat << 'EOF' > package_flat/profile.json
           {
             "type": "Box64",
             "versionName": "t618-fastmath",
             "versionCode": 1,
-            "description": "Box64 T618 optimizado con ffast-math y soporte BCN Compute Shaders.",
+            "description": "Box64 T618 optimizado con NDK Bionic y soporte BCN Compute Shaders.",
             "env": {
               "BOX64_DYNAREC": "1",
-              "BOX64_DYNAREC_SAFEFLAGS": "1",
               "BOX64_DYNAREC_BIGBLOCK": "1",
+              "BOX64_DYNAREC_STRONGMEM": "1",
+              "BOX64_DYNAREC_FASTROUND": "1",
               "ENABLE_BCN_LAYER": "1",
               "BCN_USE_COMPUTE": "1",
               "BCN_COMPUTE_AUTO": "1",
@@ -100,17 +115,14 @@ jobs:
           }
           EOF
           
-          # Forzar codificación Unix (LF) para evitar rechazos en el instalador de Android
           dos2unix package_flat/profile.json
 
       - name: "Compile into .wcp Package (Zstandard Flat Format)"
         run: |
           cd package_flat
-          # Empaquetamos profile.json y box64 sueltos en la raíz usando el formato Zstandard compatible
           tar --zstd -cf ../box64_t618_wcp.wcp profile.json box64
           cd ..
 
-      # PUBLICACIÓN ULTRA ROBUSTA EN RELEASES: Sube el archivo .wcp directamente a tu cuenta de GitHub
       - name: "Publish .WCP Package directly to Releases"
         run: |
           TAG_NAME="v1.0.${{ github.run_number }}"
@@ -118,7 +130,7 @@ jobs:
           
           gh release create "$TAG_NAME" \
             --title "Box64 Pipetto T618 WCP (Build #${{ github.run_number }})" \
-            --notes "Box64 Dynarec del repositorio de Pipetto-crypto empaquetado en perfil WCP oficial con soporte BCN Layer activo." \
+            --notes "Box64 Dynarec compilado de forma nativa con Android NDK para corregir el congelamiento de pantalla." \
             box64_t618_wcp.wcp
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
